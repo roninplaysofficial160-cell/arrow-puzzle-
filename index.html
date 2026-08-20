@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Arrow Twist Puzzle</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            background-color: #0b0f19;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            width: 100%;
+            max-width: 480px;
+            padding: 16px 20px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #00f0ff;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+        }
+        .stats-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .badge {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .coins {
+            color: #ffd700;
+            border-color: rgba(255, 215, 0, 0.3);
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+        }
+        .canvas-container {
+            width: 92vw;
+            max-width: 420px;
+            height: 92vw;
+            max-height: 420px;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.15);
+            border-radius: 16px;
+            background: #111827;
+            border: 2px solid #1f2937;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 14px;
+            display: block;
+        }
+        .footer {
+            width: 100%;
+            max-width: 480px;
+            padding: 16px 20px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        button {
+            background: linear-gradient(135deg, #1f2937, #111827);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        button:active {
+            transform: scale(0.96);
+            background: #374151;
+        }
+        .btn-restart {
+            border-color: #ff3366;
+            color: #ff3366;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-card {
+            background: #111827;
+            border: 2px solid #00f0ff;
+            border-radius: 20px;
+            padding: 24px 32px;
+            text-align: center;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.4);
+        }
+        .modal-card h2 {
+            font-size: 24px;
+            color: #00f0ff;
+            margin-bottom: 8px;
+        }
+        .modal-card p {
+            color: #ffd700;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="title">ARROW TWIST</div>
+        <div class="stats-badge">
+            <div class="badge" id="levelDisplay">Level 1</div>
+            <div class="badge coins" id="coinDisplay">🪙 0</div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="gameCanvas" width="800" height="800"></canvas>
+    </div>
+
+    <div class="footer">
+        <button class="btn-restart" onclick="restartLevel()">Reset</button>
+        <button onclick="nextLevelPreview()">Skip Level</button>
+    </div>
+
+    <div class="modal" id="winModal">
+        <div class="modal-card">
+            <h2>LEVEL COMPLETE!</h2>
+            <p>+100 Coins Earned</p>
+            <button onclick="advanceNextLevel()" style="border-color:#00f0ff; color:#00f0ff;">Next Level</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelDisplay = document.getElementById('levelDisplay');
+        const coinDisplay = document.getElementById('coinDisplay');
+        const winModal = document.getElementById('winModal');
+
+        let currentLevel = 1;
+        let coins = 0;
+        let gridSize = 6;
+        let arrows = [];
+        let isAnimating = false;
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep(freq, type, duration) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        const DIRS = {
+            UP: { dx: 0, dy: -1, angle: -Math.PI / 2 },
+            RIGHT: { dx: 1, dy: 0, angle: 0 },
+            DOWN: { dx: 0, dy: 1, angle: Math.PI / 2 },
+            LEFT: { dx: -1, dy: 0, angle: Math.PI }
+        };
+
+        function generateLevel(lvl) {
+            gridSize = Math.min(8, 5 + Math.floor(lvl / 2));
+            arrows = [];
+            let totalCells = gridSize * gridSize;
+            let arrowCount = Math.floor(totalCells * 0.75);
+
+            let positions = [];
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    positions.push({ r, c });
+                }
+            }
+            positions.sort(() => Math.random() - 0.5);
+
+            const dirKeys = Object.keys(DIRS);
+            for (let i = 0; i < arrowCount; i++) {
+                let pos = positions[i];
+                let randomDir = dirKeys[Math.floor(Math.random() * dirKeys.length)];
+                arrows.push({
+                    id: i,
+                    r: pos.r,
+                    c: pos.c,
+                    dir: randomDir,
+                    isEscaping: false,
+                    isBlocked: false,
+                    x: 0,
+                    y: 0,
+                    alpha: 1
+                });
+            }
+            updateUI();
+            draw();
+        }
+
+        function updateUI() {
+            levelDisplay.innerText = `Level ${currentLevel}`;
+            coinDisplay.innerText = `🪙 ${coins}`;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const cellSize = canvas.width / gridSize;
+
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 2;
+            for (let i = 0; i <= gridSize; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * cellSize, 0);
+                ctx.lineTo(i * cellSize, canvas.height);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * cellSize);
+                ctx.lineTo(canvas.width, i * cellSize);
+                ctx.stroke();
+            }
+
+            arrows.forEach(arrow => {
+                let cx = (arrow.c + 0.5) * cellSize + arrow.x;
+                let cy = (arrow.r + 0.5) * cellSize + arrow.y;
+                let angle = DIRS[arrow.dir].angle;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(angle);
+                ctx.globalAlpha = arrow.alpha;
+
+                ctx.fillStyle = arrow.isBlocked ? '#ff3366' : '#00f0ff';
+                ctx.shadowColor = arrow.isBlocked ? '#ff3366' : '#00f0ff';
+                ctx.shadowBlur = 12;
+
+                let s = cellSize * 0.35;
+                ctx.beginPath();
+                ctx.moveTo(s, 0);
+                ctx.lineTo(-s * 0.6, -s * 0.7);
+                ctx.lineTo(-s * 0.3, 0);
+                ctx.lineTo(-s * 0.6, s * 0.7);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            });
+        }
+
+        function checkPathClear(arrow) {
+            let stepR = DIRS[arrow.dir].dy;
+            let stepC = DIRS[arrow.dir].dx;
+            let currR = arrow.r + stepR;
+            let currC = arrow.c + stepC;
+
+            while (currR >= 0 && currR < gridSize && currC >= 0 && currC < gridSize) {
+                let blocker = arrows.find(a => a.r === currR && a.c === currC);
+                if (blocker) return false;
+                currR += stepR;
+                currC += stepC;
+            }
+            return true;
+        }
+
+        function triggerEscape(arrow) {
+            isAnimating = true;
+            playBeep(600, 'sine', 0.15);
+            let dirInfo = DIRS[arrow.dir];
+            let dist = 0;
+            const speed = 25;
+
+            function animate() {
+                dist += speed;
+                arrow.x += dirInfo.dx * speed;
+                arrow.y += dirInfo.dy * speed;
+                arrow.alpha = Math.max(0, 1 - dist / (canvas.width * 0.8));
+                draw();
+
+                if (dist < canvas.width) {
+                    requestAnimationFrame(animate);
+                } else {
+                    arrows = arrows.filter(a => a.id !== arrow.id);
+                    isAnimating = false;
+                    draw();
+                    checkLevelComplete();
+                }
+            }
+            animate();
+        }
+
+        function triggerBlocked(arrow) {
+            playBeep(180, 'square', 0.2);
+            arrow.isBlocked = true;
+            draw();
+            setTimeout(() => {
+                arrow.isBlocked = false;
+                draw();
+            }, 250);
+        }
+
+        function checkLevelComplete() {
+            if (arrows.length === 0) {
+                coins += 100;
+                updateUI();
+                playBeep(880, 'triangle', 0.4);
+                winModal.style.display = 'flex';
+            }
+        }
+
+        function handleTap(event) {
+            if (isAnimating) return;
+            const rect = canvas.getBoundingClientRect();
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const touchX = (clientX - rect.left) * scaleX;
+            const touchY = (clientY - rect.top) * scaleY;
+
+            const cellSize = canvas.width / gridSize;
+            const tappedC = Math.floor(touchX / cellSize);
+            const tappedR = Math.floor(touchY / cellSize);
+
+            const clickedArrow = arrows.find(a => a.r === tappedR && a.c === tappedC);
+            if (!clickedArrow) return;
+
+            if (checkPathClear(clickedArrow)) {
+                triggerEscape(clickedArrow);
+            } else {
+                triggerBlocked(clickedArrow);
+            }
+        }
+
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleTap(e); }, { passive: false });
+        canvas.addEventListener('mousedown', handleTap);
+
+        function restartLevel() {
+            winModal.style.display = 'none';
+            generateLevel(currentLevel);
+        }
+
+        function advanceNextLevel() {
+            winModal.style.display = 'none';
+            currentLevel++;
+            generateLevel(currentLevel);
+        }
+
+        function nextLevelPreview() {
+            advanceNextLevel();
+        }
+
+        generateLevel(currentLevel);
+    </script>
+</body>
+</html>
+
